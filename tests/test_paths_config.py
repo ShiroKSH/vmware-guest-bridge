@@ -89,8 +89,9 @@ class ConfigTests(unittest.TestCase):
             config_path = Path(temporary) / "config.toml"
             config_path.write_text("host_root = 'files'\nvmx = 'test.vmx'\ntimeout = 20\n")
             config = load_config(config_path, timeout=5)
-            self.assertEqual(config.host_root, Path(temporary) / "files")
-            self.assertEqual(config.vmx, Path(temporary) / "test.vmx")
+            expected_root = Path(temporary).resolve()
+            self.assertEqual(config.host_root, expected_root / "files")
+            self.assertEqual(config.vmx, expected_root / "test.vmx")
             self.assertEqual(config.timeout, 5)
             self.assertEqual(
                 load_config(config_path, host_root="override").host_root, Path("override").resolve()
