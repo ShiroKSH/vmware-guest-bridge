@@ -7,7 +7,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from vmware_guest_bridge.cli import main
-from vmware_guest_bridge.config import Config
+from vmware_guest_bridge.config import Config, load_config
 from vmware_guest_bridge.errors import InvalidRequest, OutcomeUnknown
 from vmware_guest_bridge.protocol import MAX_LINE, Bridge, serve, validate_request
 
@@ -37,6 +37,9 @@ class ProtocolTests(unittest.TestCase):
             {"action": "upload", "source": "a", "target": "b", "overwrite": "false"},
             {"action": "ps", "script": "'a'", "file": "a.ps1"},
             {"action": "ps"},
+            {"action": "sh", "script": "true", "file": "true.sh"},
+            {"action": "sh"},
+            {"action": "sh", "script": "true", "interactive": True},
             {"action": "reset"},
             {"action": "status", "id": []},
         ):
@@ -88,6 +91,19 @@ class ProtocolTests(unittest.TestCase):
         process.assert_not_called()
         connect.assert_not_called()
 
+    def test_shell_dispatch_and_nonzero_exit_envelope(self):
+        bridge = Bridge(Config(guest_os="linux", guest_root="/home/user/vmb"), no_input=True)
+        self.addCleanup(bridge.close)
+        with patch.object(
+            bridge.guest, "shell", return_value={"guest": {"ok": False, "exit_code": 7}}
+        ) as shell:
+            output = io.StringIO()
+            serve(bridge, io.StringIO('{"id":9,"action":"sh","script":"exit 7"}\n'), output)
+            response = json.loads(output.getvalue().splitlines()[1])
+            self.assertFalse(response["ok"])
+            self.assertEqual(response["id"], 9)
+            shell.assert_called_once_with("exit 7")
+
 
 class CliTests(unittest.TestCase):
     def invoke(self, args):
@@ -103,6 +119,19 @@ class CliTests(unittest.TestCase):
             original = path.read_bytes()
             self.assertEqual(self.invoke(["init", "--output", str(path)])[0], 1)
             self.assertEqual(path.read_bytes(), original)
+
+    def test_linux_init_and_shell_command_use_configured_guest(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "linux.toml"
+            code, _, _ = self.invoke(["--guest-os", "linux", "init", "--output", str(path)])
+            self.assertEqual(code, 0)
+            self.assertEqual(load_config(path).guest_os, "linux")
+            with patch(
+                "vmware_guest_bridge.guest.Guest.shell_file", return_value={"guest": {"ok": True}}
+            ) as shell:
+                code, _, _ = self.invoke(["--config", str(path), "sh", "--file", "hello.sh"])
+            self.assertEqual(code, 0)
+            shell.assert_called_once_with("hello.sh")
 
     def test_missing_input_json_has_exit_two_and_no_traceback(self):
         code, output, errors = self.invoke(["--json", "upload"])

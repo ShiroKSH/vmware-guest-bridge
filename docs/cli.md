@@ -10,16 +10,21 @@ Global options go **before** the command. `vmb --help`, `vmb COMMAND --help`, an
 
 `vmb init --output bridge.toml` writes a starter config and refuses to overwrite an existing file. `--config FILE` explicitly loads it. No files are auto-discovered and no `.env` files are loaded.
 
+Use `vmb --guest-os linux init` for a Linux guest; `macos`, `freebsd`, and `posix` also select POSIX paths and shell execution. The default is `windows`. See [platform setup](platforms.md) for host/guest combinations.
+
 Precedence: command-line flag, explicit TOML config, built-in default. Config paths resolve relative to the config file; CLI paths resolve relative to the current directory. The only credential environment lookup is the exact variable selected by `password_env` / `--password-env`.
 
 | Global flag | TOML field | Default / purpose |
 | --- | --- | --- |
 | `--vmx PATH` | `vmx` | Required for Tools operations; existing `.vmx` file |
-| `--vmrun PATH` | `vmrun` | Workstation's standard installation, then `PATH` |
-| `--username USER` | `username` | Guest Windows account; not needed for `status` or console |
+| `--vmrun PATH` | `vmrun` | Host-specific Workstation/Fusion installation, then `PATH` |
+| `--host-type TYPE` | `host_type` | `auto`: `fusion` on macOS, `ws` elsewhere; explicit `ws` or `fusion` supported |
+| `--guest-os OS` | `guest_os` | `windows`; also `linux`, `macos`, `freebsd`, `posix` |
+| `--guest-shell PATH` | `guest_shell` | `/bin/sh`; absolute interpreter path inside a POSIX guest |
+| `--username USER` | `username` | Guest account; not needed for `status` or console |
 | `--password-env NAME` | `password_env` | Name of an already exported password variable; otherwise hidden prompt |
 | `--host-root PATH` | `host_root` | `.guest-bridge` beside the config, or in the current directory |
-| `--guest-root PATH` | `guest_root` | `C:\GuestBridge`; must be a directory on a guest drive |
+| `--guest-root PATH` | `guest_root` | Windows: `C:\GuestBridge`; POSIX: explicitly set an absolute private directory |
 | `--timeout SECONDS` | `timeout` | `60`; allowed range 0.1–3600 |
 | `--encoding NAME` | `encoding` | Host locale encoding for `vmrun` diagnostics |
 | `--console-host IP` | `[console] host` | `127.0.0.1`; numeric loopback only |
@@ -28,7 +33,7 @@ Precedence: command-line flag, explicit TOML config, built-in default. Config pa
 | `--json` | — | One JSON response envelope on stdout, including errors |
 | `--no-input` | — | Never prompt; fail if required credentials or text are missing |
 
-Ordinary diagnostics use the host locale; override `--encoding cp866` or another code page if needed. PowerShell source and returned JSON always use UTF-8. `serve` accepts UTF-8 input and writes ASCII-escaped JSON.
+Ordinary diagnostics use the host locale; override `--encoding cp866` or another code page if needed. Scripts and PowerShell JSON use UTF-8. Shell stdout/stderr are decoded as UTF-8 with replacement for invalid bytes. `serve` accepts UTF-8 input and writes ASCII-escaped JSON.
 
 ## Commands
 
@@ -42,7 +47,8 @@ Ordinary diagnostics use the host locale; override `--encoding cp866` or another
 | `download --source folder/b.txt --target returned.txt` | Stage a guest file, then publish it below `host_root`. |
 | `ps --file script.ps1` | Run a UTF-8 file below `host_root`, return a request ID and JSON output. |
 | `ps --file app.ps1 --interactive` | Run in the logged-in guest user's desktop session. |
-| `result REQUEST_ID` | Collect an existing PowerShell result; never executes the script again. |
+| `sh --file script.sh` | Run a UTF-8 file in a POSIX guest; return stdout, stderr, exit code, and request ID. |
+| `result REQUEST_ID` | Collect an existing `ps` or `sh` result with the original config; never executes the script again. |
 | `serve` | Run the sequential JSON-lines interface on stdin/stdout. |
 | `console probe` | Read framebuffer dimensions and the server's desktop name. |
 | `console screenshot --target screen.png` | Save a complete PNG below `host_root`. |
@@ -53,9 +59,13 @@ Ordinary diagnostics use the host locale; override `--encoding cp866` or another
 
 `upload`, `download`, and `console screenshot` accept `--overwrite`. Parent host directories are created as needed. All transfer names are relative to their roots, even when those roots are absolute. `.vmb` is reserved for request records.
 
+Host names follow host OS rules; guest names follow `guest_os`. POSIX paths are case-sensitive and use `/`; backslashes are rejected. Windows supports `/` and `\` separators and rejects drive/UNC/device paths, alternate data streams, device names, and trailing-dot/space aliases. Both reject traversal and empty path components. Use separate source/target names when transferring a POSIX filename that Windows cannot represent.
+
 `ps` captures PowerShell pipeline output into `guest.data`, always an array. Exceptions and a nonzero final native-command exit code produce `guest.ok=false`. A literal `exit`, a killed PowerShell process, or loss of VMware Tools may prevent result creation. Scripts that invoke several native commands should check intermediate exit codes themselves.
 
-The timeout covers the complete `ps` workflow, including preparation and result polling. Each ordinary `vmrun` call has its own timeout. A console action has one transport deadline. A timeout kills the waiting host `vmrun` process, not the guest program. There is no automatic cancellation, retry, or VM restart.
+`sh` captures `guest.stdout` and `guest.stderr` as strings, plus integer `guest.exit_code`; `guest.ok` is true only for exit code zero. It runs in `guest_root` with stdin closed and no terminal. The configured interpreter reads the script regardless of its shebang; use `--guest-shell /bin/bash` for Bash. CRLF is normalized to LF. See [shell behavior](platforms.md#shell-behavior) for exit handling, background jobs, and result limits.
+
+The timeout covers the complete `ps`/`sh` workflow, including preparation and result polling. `result` uses one deadline for its complete collection. Each ordinary `vmrun` call has its own timeout. A console action has one transport deadline. A timeout kills the waiting host `vmrun` process, not the guest program. There is no automatic cancellation, retry, or VM restart.
 
 ## Keys
 

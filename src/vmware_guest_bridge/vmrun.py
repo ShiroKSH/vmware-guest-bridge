@@ -57,7 +57,7 @@ class Vmrun:
             raise InvalidRequest("Select an existing .vmx file with --vmx or in your config.")
         executable = find_vmrun(self.config.vmrun)
         seconds = positive_timeout(self.config.timeout if timeout is None else timeout)
-        args = [str(executable), "-T", "ws"]
+        args = [str(executable), "-T", self.config.vmrun_type]
         if authenticated:
             credentials = self.credentials()
             args += ["-gu", credentials.username, "-gp", credentials.password]

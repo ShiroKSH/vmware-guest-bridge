@@ -1,36 +1,51 @@
 import os
 import re
 import shutil
-from pathlib import Path, PureWindowsPath
+from pathlib import Path, PurePosixPath, PureWindowsPath
 
 from .errors import InvalidRequest
 
 _RESERVED = re.compile(r"^(CON|PRN|AUX|NUL|COM[1-9¹²³]|LPT[1-9¹²³])(?:\.|$)", re.I)
 
 
-def relative_parts(value):
+def relative_parts(value, *, windows=True):
     if not isinstance(value, str) or not value or len(value) > 4096:
         raise InvalidRequest(
             "File paths must be nonempty relative strings, at most 4096 characters."
         )
-    path = PureWindowsPath(value)
+    path = PureWindowsPath(value) if windows else PurePosixPath(value)
     if path.drive or path.root:
         raise InvalidRequest("File paths must be relative to the configured root.")
-    parts = value.replace("\\", "/").split("/")
+    if not windows and "\\" in value:
+        raise InvalidRequest("POSIX paths must use forward slashes, not backslashes.")
+    parts = (value.replace("\\", "/") if windows else value).split("/")
     for part in parts:
         if (
             part in ("", ".", "..")
-            or part.rstrip(" .") != part
-            or any(ord(c) < 32 or c in '<>:"|?*' for c in part)
-            or _RESERVED.match(part)
+            or any(ord(c) < 32 or ord(c) == 127 for c in part)
+            or windows
+            and (
+                part.rstrip(" .") != part
+                or any(c in '<>:"|?*' for c in part)
+                or _RESERVED.match(part)
+            )
         ):
             raise InvalidRequest("Path contains traversal, a device name, or an invalid component.")
     if parts[0].casefold() == ".vmb":
-        raise InvalidRequest("The .vmb directory is reserved for PowerShell requests.")
+        raise InvalidRequest("The .vmb directory is reserved for script requests.")
     return parts
 
 
-def validate_guest_root(value):
+def validate_posix_path(value):
+    if not isinstance(value, str) or not value.startswith("/") or value.startswith("//"):
+        raise InvalidRequest("A POSIX guest path must be absolute, for example /home/user/bridge.")
+    relative_parts(value[1:].rstrip("/"), windows=False)
+    return PurePosixPath(value)
+
+
+def validate_guest_root(value, *, windows=True):
+    if not windows:
+        return validate_posix_path(value)
     if not isinstance(value, str):
         raise InvalidRequest("guest_root must be a Windows directory path.")
     path = PureWindowsPath(value)
@@ -58,7 +73,7 @@ class Workspace:
         if internal:
             path = self.root.joinpath(*PureWindowsPath(value).parts)
         else:
-            path = self.root.joinpath(*relative_parts(value))
+            path = self.root.joinpath(*relative_parts(value, windows=os.name == "nt"))
         resolved = path.resolve()
         if not resolved.is_relative_to(self.root) or resolved == self.root:
             raise InvalidRequest("Host path leaves host_root, possibly through a symbolic link.")

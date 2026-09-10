@@ -22,7 +22,9 @@ This client supports RFB 3.3, 3.7, and 3.8, raw true-color frames, and the `None
        Select-Object LocalAddress, LocalPort, OwningProcess
    ```
 
-   It must be bound to `127.0.0.1`, not `0.0.0.0` or a LAN address. Use the returned PID with `Get-Process -Id PID` and confirm it belongs to the intended VMware VM process. A desktop name returned by the server is not authenticated identity. If the listener is exposed, disable it before continuing.
+   On Linux, inspect the same port with `ss -ltnp 'sport = :5900'`. On macOS, use `lsof -nP -iTCP:5900 -sTCP:LISTEN`. Process details may require additional privileges.
+
+   It must be bound to `127.0.0.1`, not `0.0.0.0` or a LAN address. Confirm the owning process belongs to the intended VMware VM; on Windows, inspect the returned PID with `Get-Process -Id PID`. A desktop name returned by the server is not authenticated identity. If the listener is exposed, disable it before continuing.
 
 4. Match the port and explicitly opt in in `bridge.toml`:
 
@@ -38,6 +40,8 @@ This client supports RFB 3.3, 3.7, and 3.8, raw true-color frames, and the `None
 When finished, disable the VM's remote-display listener through its configuration while powered off and verify that the port is no longer listening. Exiting the bridge closes its client connections; it does not disable VMware's server.
 
 The bridge intentionally does not automate these VM configuration changes. Loopback binding was exercised with Workstation 17.6.4; verify it again for your installed version.
+
+The RFB client runs on all three host platforms and does not depend on the guest OS. Availability of VMware's listener varies by product/version; successful guest operations through Fusion or Workstation do not imply that a compatible RFB listener is enabled. Use file/script operations independently when it is unavailable.
 
 ## Input and captures
 

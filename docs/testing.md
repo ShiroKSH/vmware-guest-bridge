@@ -10,19 +10,19 @@ python -m ruff format --check src tests tools
 python -m build
 ```
 
-The tests exercise actual loopback TCP exchanges with a small RFB fixture server, plus a mocked `vmrun` subprocess. They cover version negotiation, fragmented handshakes, complete PNG content and CRCs, partial/malformed frames, keyboard/button release, request validation, path escapes, overwrite races, credential redaction, timeouts, and result collection.
+The tests exercise actual loopback TCP exchanges with a small RFB fixture server, plus a mocked `vmrun` subprocess. They cover version negotiation, fragmented handshakes, complete PNG content and CRCs, partial/malformed frames, keyboard/button release, request validation, Windows/POSIX path escapes, host-product discovery, overwrite races, credential redaction, timeouts, and result collection.
 
-CI runs on Windows and Ubuntu with Python 3.11, 3.13, and 3.14. Linux runs validate portable protocol/path logic; Linux VMware hosts and Linux guests are not supported by this version.
+CI runs on Windows, Ubuntu, and macOS with Python 3.11, 3.13, and 3.14. Linux/macOS additionally run the generated wrappers in the native `/bin/sh`, substituting only file transport and launch for VMware Tools. These tests verify real stdout/stderr, Unicode, explicit exits and syntax failures, quoted paths, CRLF/BOM handling, private output permissions, bounded collection, byte-exact transfers, and collection after a timeout without executing twice. Native shell tests are skipped on Windows. A separate job builds and installs the wheel in a clean environment.
 
 ## Explicit guest smoke test
 
-Prepare a disposable, already-running Windows VM and a private `bridge.toml`. Install VMware Tools, set a real guest username, and choose dedicated host/guest file roots. Then run:
+Prepare a disposable, already-running Windows or POSIX VM and a private `bridge.toml`. Install VMware Tools, select the guest profile, set a real guest username, and choose dedicated host/guest file roots. Follow [POSIX setup](platforms.md) for a private guest directory. Then run:
 
 ```powershell
-python tools\smoke_guest.py --config bridge.toml
+python tools/smoke_guest.py --config bridge.toml
 ```
 
-The script prompts for the guest password, creates a unique `smoke-*` directory, uploads/downloads a text fixture, compares its bytes, runs a small PowerShell calculation, and recollects that request's result. It leaves its files for inspection. Add `--console` only after completing [console setup](console.md); this also saves a guest PNG. It does not start, stop, or reconfigure a VM.
+The script prompts for the guest password, creates a unique `smoke-*` directory, uploads/downloads a text fixture, compares its bytes, runs a small calculation through PowerShell or the POSIX shell, and recollects that request's result. POSIX runs also check a deliberate nonzero exit. It leaves its files for inspection. Add `--console` only after completing [console setup](console.md); this also saves a guest PNG. It does not start, stop, or reconfigure a VM.
 
 Keep guest test files, configs, and screenshots outside version control. Clean up the unique smoke directory and request records in your own test environment when finished.
 

@@ -1,5 +1,5 @@
 include README.ru.md CHANGELOG.md CONTRIBUTING.md SECURITY.md
 recursive-include docs *.md
-recursive-include examples *.ps1 *.jsonl
+recursive-include examples *.ps1 *.sh *.jsonl
 recursive-include tools *.py
 recursive-include tests *.py

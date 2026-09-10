@@ -9,6 +9,7 @@ dist/
 .coverage
 htmlcov/
 bridge.toml
+bridge.*.toml
 .guest-bridge/
 .env
 .env.*

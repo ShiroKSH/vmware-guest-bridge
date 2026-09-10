@@ -20,6 +20,13 @@ The ready event means the parser is ready; it does not validate VMware Tools or 
 
 The example request ID above is illustrative; actual IDs are random 32-character lowercase hex strings. The caller's optional `id` is separate: null, a string up to 128 characters, or an integer within JavaScript's safe integer range. Invalid envelopes receive `id:null`.
 
+For a POSIX guest, start with a config containing `guest_os = 'linux'` (or another POSIX profile) and an absolute `guest_root`, then use `sh`:
+
+```json
+{"id":"calc","action":"sh","script":"printf '%s\n' \"$((6 * 7))\""}
+{"id":"calc","ok":true,"result":{"request_id":"0123456789abcdef0123456789abcdef","guest":{"ok":true,"exit_code":0,"stdout":"42\n","stderr":""}}}
+```
+
 ## Actions
 
 | `action` | Required fields | Optional fields |
@@ -28,6 +35,7 @@ The example request ID above is illustrative; actual IDs are random 32-character
 | `mkdir` | `path` | — |
 | `upload`, `download` | `source`, `target` | `overwrite` (boolean, false) |
 | `ps` | Exactly one of `script` or `file` | `interactive` (boolean, false) |
+| `sh` | Exactly one of `script` or `file` | — |
 | `result` | `request_id` | — |
 | `console.probe` | — | — |
 | `console.screenshot` | `target` ending in `.png` | `overwrite` (boolean, false) |
@@ -38,13 +46,17 @@ The example request ID above is illustrative; actual IDs are random 32-character
 
 All actions accept `id`. Unknown actions/fields and wrong boolean types are rejected before dispatch. File names are relative to the configured roots. There is no action that changes host paths, credentials, console endpoints, VM power state, or networking.
 
+`ps` requires a Windows guest profile; `sh` requires a POSIX profile. The selected guest interpreter is fixed by the host config. `sh` returns UTF-8-decoded `stdout`/`stderr` and `exit_code`; a nonzero exit code makes both `result.guest.ok` and the outer `ok` false. Invalid UTF-8 output bytes are replaced; download a file when byte-exact output is needed.
+
 ## Errors and recovery
 
 ```json
-{"id":"calc","ok":false,"error":{"code":"outcome_unknown","message":"No complete PowerShell result before the deadline. Use result with this request_id; do not resubmit the script.","request_id":"0123456789abcdef0123456789abcdef","guest_result":"C:\\GuestBridge\\.vmb\\0123456789abcdef0123456789abcdef.json"}}
+{"id":"calc","ok":false,"error":{"code":"outcome_unknown","message":"No complete script result before the deadline. Use result with this request_id; do not resubmit the script.","request_id":"0123456789abcdef0123456789abcdef","guest_result":"C:\\GuestBridge\\.vmb\\0123456789abcdef0123456789abcdef.json"}}
 ```
 
 Use the same generated ID with `result`. A failed collection request does not rerun anything. A failure returned by the script uses `ok:false` with `result.guest.ok:false`; transport and validation failures use an `error` object instead.
+
+Keep the original VM, guest OS, and roots when collecting. Windows results use `.vmb/ID.json`; POSIX results use a `.vmb/ID.exitcode` completion marker with `.stdout` and `.stderr` files. POSIX collection fetches the marker first and publishes local records only after all files validate. A single deadline covers these transfers.
 
 ```json
 {"id":"collect","action":"result","request_id":"0123456789abcdef0123456789abcdef"}
@@ -57,7 +69,8 @@ Use the same generated ID with `result`. A failed collection request does not re
 
 - UTF-8 input, one JSON object per line, at most 1 MiB per line including its newline.
 - Duplicate keys, nonfinite numbers, and nesting beyond 64 levels are rejected.
-- PowerShell source: 256 KiB. Collected JSON: 8 MiB. `vmrun` diagnostic response: 1 MiB, then a truncation marker.
+- Script source: 256 KiB. Collected PowerShell JSON: 8 MiB. Collected shell stdout plus stderr: 8 MiB before decoding. `vmrun` diagnostic response: 1 MiB, then a truncation marker. JSON escaping may make the response larger than these raw-byte limits.
+- Guest result files are copied before their sizes are checked. Output limits bound accepted results, not guest disk usage or transfer volume.
 - Console: at most 8192 pixels per dimension and 16,777,216 pixels total; at most 4096 rectangles and 1024 server messages per capture.
 - Input is trusted local control. This is a small line protocol, not JSON-RPC 2.0 or an authenticated network service.
 

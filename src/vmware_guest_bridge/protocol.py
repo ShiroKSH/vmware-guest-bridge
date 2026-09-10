@@ -16,6 +16,7 @@ FIELDS = {
     "upload": ({"source", "target"}, {"overwrite"}),
     "download": ({"source", "target"}, {"overwrite"}),
     "ps": (set(), {"script", "file", "interactive"}),
+    "sh": (set(), {"script", "file"}),
     "result": ({"request_id"}, set()),
     "console.probe": (set(), set()),
     "console.screenshot": ({"target"}, {"overwrite"}),
@@ -47,8 +48,8 @@ def validate_request(request):
     for name in ("overwrite", "interactive"):
         if name in request and type(request[name]) is not bool:
             raise InvalidRequest(f"{name} must be a boolean.")
-    if action == "ps" and ("script" in request) == ("file" in request):
-        raise InvalidRequest("ps requires exactly one of script or file.")
+    if action in ("ps", "sh") and ("script" in request) == ("file" in request):
+        raise InvalidRequest(f"{action} requires exactly one of script or file.")
     return action
 
 
@@ -73,6 +74,11 @@ class Bridge:
             return {
                 "vmrun": str(executable),
                 "vmx": str(vmx),
+                "host_type": self.config.vmrun_type,
+                "guest_os": self.config.guest_os,
+                "guest_shell": "powershell.exe"
+                if self.config.windows_guest
+                else self.config.guest_shell,
                 "host_root": str(self.guest.workspace.root),
                 "guest_root": str(self.guest.root),
                 "console_enabled": self.config.allow_unauthenticated,
@@ -98,6 +104,10 @@ class Bridge:
             )
         if action == "result":
             return self.guest.result(request["request_id"])
+        if action == "sh":
+            if "file" in request:
+                return self.guest.shell_file(request["file"])
+            return self.guest.shell(request["script"])
         if action == "console.probe":
             return self.console.probe()
         if action == "console.screenshot":

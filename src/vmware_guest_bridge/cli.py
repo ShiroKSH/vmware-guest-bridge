@@ -4,7 +4,7 @@ import sys
 from pathlib import Path
 
 from . import __version__
-from .config import EXAMPLE, load_config
+from .config import GUEST_SYSTEMS, HOST_TYPES, example_config, load_config
 from .errors import BridgeError, InvalidRequest
 from .protocol import Bridge, emit, failed_guest, serve
 from .vmrun import read_secret
@@ -22,7 +22,7 @@ class Parser(argparse.ArgumentParser):
 def parser():
     root = Parser(
         prog="vmb",
-        description="Windows guest commands and local VMware console access.",
+        description="Windows and POSIX guest commands, files, and local VMware console access.",
         epilog="Examples: vmb init | vmb --config bridge.toml status | "
         "vmb --config bridge.toml ps --file hello.ps1",
     )
@@ -37,14 +37,17 @@ def parser():
     for name, help_text in (
         ("vmx", "target .vmx file"),
         ("vmrun", "path to the installed vmrun executable"),
-        ("username", "guest Windows username"),
+        ("username", "guest account name"),
         ("password-env", "name of an already exported guest-password environment variable"),
         ("host-root", "directory containing transfer files and request records"),
-        ("guest-root", "Windows guest directory for transfers and request records"),
+        ("guest-root", "absolute guest directory for transfers and request records"),
+        ("guest-shell", "POSIX guest shell (default: /bin/sh)"),
         ("encoding", "encoding of vmrun diagnostic output"),
         ("console-host", "numeric loopback address (default: 127.0.0.1)"),
     ):
         root.add_argument("--" + name, help=help_text)
+    root.add_argument("--host-type", choices=HOST_TYPES, help="vmrun product (default: auto)")
+    root.add_argument("--guest-os", choices=GUEST_SYSTEMS, help="guest OS (default: windows)")
     root.add_argument("--timeout", type=float, help="operation timeout in seconds (default: 60)")
     root.add_argument("--console-port", type=int, help="local RFB port (default: 5900)")
     root.add_argument(
@@ -75,8 +78,10 @@ def parser():
     ps.add_argument(
         "--interactive", action="store_true", help="use the logged-in guest desktop session"
     )
+    sh = commands.add_parser("sh", help="run a UTF-8 shell file from host_root in a POSIX guest")
+    sh.add_argument("--file", required=True)
     result = commands.add_parser(
-        "result", help="collect a previous PowerShell result without rerunning"
+        "result", help="collect a previous script result without rerunning"
     )
     result.add_argument("request_id")
     commands.add_parser(
@@ -149,7 +154,7 @@ def main(argv=None):
         args = parser().parse_args(arguments)
         if args.command == "init":
             with Path(args.output).open("x", encoding="utf-8", newline="\n") as stream:
-                stream.write(EXAMPLE)
+                stream.write(example_config(args.guest_os or "windows", args.host_type or "auto"))
             result = {"path": str(Path(args.output).resolve())}
         else:
             overrides = {
@@ -157,6 +162,9 @@ def main(argv=None):
                 for name in (
                     "vmx",
                     "vmrun",
+                    "host_type",
+                    "guest_os",
+                    "guest_shell",
                     "username",
                     "password_env",
                     "host_root",

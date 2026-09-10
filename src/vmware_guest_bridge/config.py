@@ -1,21 +1,45 @@
 import codecs
 import ipaddress
 import math
+import os
 import shutil
+import sys
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
 from .errors import InvalidRequest
-from .paths import Workspace, validate_guest_root
+from .paths import Workspace, validate_guest_root, validate_posix_path
 
-EXAMPLE = r"""# Paths are relative to this file unless absolute. No passwords belong here.
-vmx = 'C:\VMs\Windows-Lab\Windows-Lab.vmx'
+GUEST_SYSTEMS = ("windows", "linux", "macos", "freebsd", "posix")
+HOST_TYPES = ("auto", "ws", "fusion")
+
+
+def example_config(guest_os="windows", host_type="auto"):
+    if sys.platform == "win32":
+        vmx = r"C:\VMs\Guest\Guest.vmx"
+    elif sys.platform == "darwin":
+        vmx = "/path/to/Guest.vmwarevm/Guest.vmx"
+    else:
+        vmx = "/path/to/Guest/Guest.vmx"
+    guest_root = (
+        r"C:\GuestBridge"
+        if guest_os == "windows"
+        else "/Users/guest-user/.guest-bridge"
+        if guest_os == "macos"
+        else "/home/guest-user/.guest-bridge"
+    )
+    return f"""# Edit vmx, username, and guest_root. No passwords belong here.
+# Host paths are relative to this file unless absolute.
+vmx = '{vmx}'
+host_type = '{host_type}'
+guest_os = '{guest_os}'
 username = 'guest-user'
 host_root = './.guest-bridge'
-guest_root = 'C:\GuestBridge'
+guest_root = '{guest_root}'
 timeout = 60
-# vmrun = 'C:\Program Files (x86)\VMware\VMware Workstation\vmrun.exe'
+# guest_shell = '/bin/sh'            # POSIX guests; /bin/bash is also supported.
+# vmrun = '/absolute/path/to/vmrun'  # Optional override of automatic discovery.
 # password_env = 'VMB_GUEST_PASSWORD'  # Name of an already exported variable.
 # encoding = 'utf-8'                 # Override if vmrun uses a legacy code page.
 
@@ -38,10 +62,13 @@ def positive_timeout(value):
 class Config:
     vmx: Path | None = None
     vmrun: Path | None = None
+    host_type: str = "auto"
+    guest_os: str = "windows"
+    guest_shell: str = "/bin/sh"
     username: str | None = None
     password_env: str | None = None
     host_root: Path = Path(".guest-bridge")
-    guest_root: str = "C:\\GuestBridge"
+    guest_root: str | None = None
     timeout: float = 60
     encoding: str | None = None
     console_host: str = "127.0.0.1"
@@ -50,7 +77,19 @@ class Config:
 
     def __post_init__(self):
         positive_timeout(self.timeout)
-        validate_guest_root(self.guest_root)
+        if self.host_type not in HOST_TYPES:
+            raise InvalidRequest("host_type must be auto, ws, or fusion.")
+        if self.guest_os not in GUEST_SYSTEMS:
+            raise InvalidRequest("guest_os must be windows, linux, macos, freebsd, or posix.")
+        if self.guest_root is None:
+            if not self.windows_guest:
+                raise InvalidRequest(
+                    "Set an absolute guest_root in a private directory for POSIX guests; "
+                    "use --guest-os linux init for an example."
+                )
+            object.__setattr__(self, "guest_root", "C:\\GuestBridge")
+        validate_guest_root(self.guest_root, windows=self.windows_guest)
+        validate_posix_path(self.guest_shell)
         Workspace(self.host_root)
         try:
             address = ipaddress.ip_address(self.console_host)
@@ -75,6 +114,16 @@ class Config:
                 codecs.lookup(self.encoding)
             except LookupError:
                 raise InvalidRequest("Unknown vmrun text encoding.") from None
+
+    @property
+    def windows_guest(self):
+        return self.guest_os == "windows"
+
+    @property
+    def vmrun_type(self):
+        if self.host_type != "auto":
+            return self.host_type
+        return "fusion" if sys.platform == "darwin" else "ws"
 
 
 def load_config(filename=None, **overrides):
@@ -120,9 +169,24 @@ def find_vmrun(explicit=None):
     if explicit is not None:
         path = Path(explicit).resolve()
     else:
-        installed = Path(r"C:\Program Files (x86)\VMware\VMware Workstation\vmrun.exe")
+        if sys.platform == "win32":
+            locations = [
+                Path(os.environ.get("PROGRAMFILES(X86)", r"C:\Program Files (x86)"))
+                / "VMware/VMware Workstation/vmrun.exe"
+            ]
+        elif sys.platform == "darwin":
+            locations = [Path("/Applications/VMware Fusion.app/Contents/Library/vmrun")]
+        else:
+            locations = [Path("/usr/bin/vmrun"), Path("/usr/lib/vmware/bin/vmrun")]
         candidate = shutil.which("vmrun")
-        path = installed if installed.is_file() else Path(candidate) if candidate else None
+        if candidate:
+            locations.append(Path(candidate))
+        path = next((entry for entry in locations if entry.is_file()), None)
     if path is None or not path.is_file():
-        raise InvalidRequest("vmrun not found. Install VMware Workstation or specify --vmrun.")
+        raise InvalidRequest(
+            "vmrun not found. Install VMware Workstation (Windows/Linux) or Fusion (macOS), "
+            "or specify --vmrun."
+        )
+    if os.name != "nt" and not os.access(path, os.X_OK):
+        raise InvalidRequest("vmrun is not executable; check its permissions or specify --vmrun.")
     return path

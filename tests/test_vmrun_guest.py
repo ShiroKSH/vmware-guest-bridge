@@ -21,7 +21,7 @@ class VmrunTests(unittest.TestCase):
         self.vmx = root / "Guest with spaces.vmx"
         self.vmx.touch()
         self.executable = root / "vmrun.exe"
-        self.executable.touch()
+        self.executable.touch(mode=0o755)
         self.config = Config(
             vmx=self.vmx,
             vmrun=self.executable,
@@ -87,6 +87,15 @@ class VmrunTests(unittest.TestCase):
         runner = Vmrun(replace(self.config, encoding="cp866"))
         with patch("vmware_guest_bridge.vmrun.subprocess.Popen", side_effect=launch):
             self.assertEqual(runner.run("checkToolsState", authenticated=False)[1], "готово")
+
+    def test_vmrun_receives_host_product_not_guest_system(self):
+        _, launch = self.fake_process()
+        runner = Vmrun(
+            replace(self.config, host_type="fusion", guest_os="linux", guest_root="/home/user/vmb")
+        )
+        with patch("vmware_guest_bridge.vmrun.subprocess.Popen", side_effect=launch) as process:
+            runner.run("checkToolsState", authenticated=False)
+        self.assertEqual(process.call_args.args[0][1:3], ["-T", "fusion"])
 
     def test_no_input_never_falls_back_to_visible_password(self):
         with (
@@ -199,6 +208,28 @@ class GuestTests(unittest.TestCase):
         with self.assertRaises(InvalidRequest):
             self.guest.result("../../secret")
         self.runner.run.assert_not_called()
+
+    def test_shell_mismatch_rejected_before_vm_operation(self):
+        with self.assertRaisesRegex(InvalidRequest, "POSIX"):
+            self.guest.shell("printf hello")
+        guest = Guest(
+            replace(self.config, guest_os="linux", guest_root="/home/user/vmb"), self.runner
+        )
+        with self.assertRaisesRegex(InvalidRequest, "use sh"):
+            guest.powershell("'hello'")
+        self.runner.run.assert_not_called()
+
+    def test_posix_guest_transfers_use_forward_slashes_on_any_host(self):
+        guest = Guest(
+            replace(self.config, guest_os="linux", guest_root="/home/user/vmb"), self.runner
+        )
+        (self.root / "input.txt").write_text("input")
+        guest.upload("input.txt", "folder/output.txt", overwrite=True)
+        self.assertEqual(self.runner.run.call_args.args[-1], "/home/user/vmb/folder/output.txt")
+        guest.mkdir("nested/child")
+        self.assertIn(
+            "/home/user/vmb/nested/child", [call.args[1] for call in self.runner.run.call_args_list]
+        )
 
     def test_malformed_result_is_not_published(self):
         def run(command, *args, **kwargs):

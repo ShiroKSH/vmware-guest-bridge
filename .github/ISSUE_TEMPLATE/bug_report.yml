@@ -16,7 +16,7 @@ body:
     id: environment
     attributes:
       label: Versions
-      description: Host Windows, guest Windows, VMware Workstation, VMware Tools, Python, and bridge version or commit.
+      description: Host and guest OS/architecture, Workstation or Fusion, VMware Tools, Python, bridge version or commit, and guest_os/guest_shell settings.
     validations:
       required: true
   - type: textarea

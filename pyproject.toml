@@ -5,17 +5,19 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "vmware-guest-bridge"
 version = "0.1.0.dev0"
-description = "Run Windows guest commands, transfer files, and control a local VMware console."
+description = "Run Windows and POSIX guest commands, transfer files, and control a local VMware console."
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
 authors = [{name = "ShiroKSH", email = "kushidashiro@gmail.com"}]
-keywords = ["vmware", "vmrun", "automation", "vnc", "windows"]
+keywords = ["vmware", "vmrun", "automation", "vnc", "windows", "linux", "macos", "freebsd"]
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Environment :: Console",
   "Intended Audience :: Developers",
   "Operating System :: Microsoft :: Windows",
+  "Operating System :: POSIX :: Linux",
+  "Operating System :: MacOS :: MacOS X",
   "Programming Language :: Python :: 3",
   "Topic :: System :: Systems Administration",
 ]

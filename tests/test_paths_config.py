@@ -1,8 +1,18 @@
+import os
 import tempfile
+import tomllib
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
-from vmware_guest_bridge.config import Config, load_config, positive_timeout
+from vmware_guest_bridge.config import (
+    GUEST_SYSTEMS,
+    Config,
+    example_config,
+    find_vmrun,
+    load_config,
+    positive_timeout,
+)
 from vmware_guest_bridge.errors import InvalidRequest
 from vmware_guest_bridge.paths import Workspace, publish_file, relative_parts, validate_guest_root
 
@@ -48,6 +58,28 @@ class PathTests(unittest.TestCase):
             with self.subTest(root=root), self.assertRaises(InvalidRequest):
                 validate_guest_root(root)
 
+    def test_posix_paths_preserve_case_and_unix_names(self):
+        self.assertEqual(
+            relative_parts("reports/CON:9?.txt", windows=False), ["reports", "CON:9?.txt"]
+        )
+        root = validate_guest_root("/home/User's Lab", windows=False)
+        self.assertEqual(str(root / "Case" / "file.txt"), "/home/User's Lab/Case/file.txt")
+
+    def test_posix_paths_reject_traversal_and_ambiguous_separators(self):
+        for value in ("", "/etc/passwd", "a/../x", "a/./x", "a//x", r"a\x", ".vmb/x", "a\x00"):
+            with self.subTest(value=value), self.assertRaises(InvalidRequest):
+                relative_parts(value, windows=False)
+        for root in ("/", "//share/data", "/home/../tmp", "~/bridge", r"C:\GuestBridge"):
+            with self.subTest(root=root), self.assertRaises(InvalidRequest):
+                validate_guest_root(root, windows=False)
+
+    @unittest.skipIf(os.name == "nt", "POSIX host filenames")
+    def test_posix_host_workspace_accepts_native_names(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Workspace(temporary).target("CON:report?.txt")
+            path.write_text("posix")
+            self.assertEqual(Workspace(temporary).source("CON:report?.txt"), path)
+
     def test_symlink_cannot_escape_host_root(self):
         with tempfile.TemporaryDirectory() as temporary:
             base = Path(temporary)
@@ -84,6 +116,87 @@ class PathTests(unittest.TestCase):
 
 
 class ConfigTests(unittest.TestCase):
+    def test_host_auto_selection_and_explicit_override(self):
+        for platform, expected in (("win32", "ws"), ("linux", "ws"), ("darwin", "fusion")):
+            with (
+                self.subTest(platform=platform),
+                patch("vmware_guest_bridge.config.sys.platform", platform),
+            ):
+                self.assertEqual(Config().vmrun_type, expected)
+                self.assertEqual(Config(host_type="ws").vmrun_type, "ws")
+                self.assertEqual(Config(host_type="fusion").vmrun_type, "fusion")
+
+    def test_linux_requires_explicit_private_guest_root(self):
+        with self.assertRaisesRegex(InvalidRequest, "guest_root"):
+            Config(guest_os="linux")
+        self.assertEqual(Config().guest_root, "C:\\GuestBridge")
+
+    def test_generated_configs_match_host_and_guest_independently(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "bridge.toml"
+            for platform in ("win32", "linux", "darwin"):
+                for guest_os in GUEST_SYSTEMS:
+                    with (
+                        self.subTest(platform=platform, guest_os=guest_os),
+                        patch("vmware_guest_bridge.config.sys.platform", platform),
+                    ):
+                        content = example_config(guest_os)
+                        path.write_text(content, encoding="utf-8")
+                        config = load_config(path)
+                        self.assertEqual(config.guest_os, guest_os)
+                        self.assertEqual(config.windows_guest, guest_os == "windows")
+                        sample_vmx = tomllib.loads(content)["vmx"]
+                        self.assertEqual(sample_vmx.startswith("C:"), platform == "win32")
+                        self.assertEqual(".vmwarevm/" in sample_vmx, platform == "darwin")
+
+    def test_invalid_system_and_shell_settings_fail_early(self):
+        for fields in (
+            {"guest_os": "android"},
+            {"host_type": "remote"},
+            {"guest_shell": "sh -c"},
+            {"guest_shell": "/bin/sh\nexit"},
+            {"guest_shell": "/"},
+            {"guest_os": "linux", "guest_root": "C:\\GuestBridge"},
+        ):
+            with self.subTest(fields=fields), self.assertRaises(InvalidRequest):
+                Config(**fields)
+
+    def test_vmrun_discovery_checks_native_locations_and_path(self):
+        locations = (
+            ("win32", "VMware/VMware Workstation/vmrun.exe"),
+            ("linux", "/usr/bin/vmrun"),
+            ("linux", "/usr/lib/vmware/bin/vmrun"),
+            ("darwin", "/Applications/VMware Fusion.app/Contents/Library/vmrun"),
+        )
+        for platform, suffix in locations:
+            with (
+                self.subTest(platform=platform, suffix=suffix),
+                patch("vmware_guest_bridge.config.sys.platform", platform),
+                patch("vmware_guest_bridge.config.shutil.which", return_value=None),
+                patch.object(
+                    Path, "is_file", lambda path, suffix=suffix: path.as_posix().endswith(suffix)
+                ),
+                patch("vmware_guest_bridge.config.os.access", return_value=True),
+            ):
+                self.assertTrue(find_vmrun().as_posix().endswith(suffix))
+        with tempfile.TemporaryDirectory() as temporary:
+            executable = Path(temporary).resolve() / "custom-vmrun"
+            executable.touch(mode=0o755)
+            with (
+                patch("vmware_guest_bridge.config.sys.platform", "darwin"),
+                patch("vmware_guest_bridge.config.shutil.which", return_value=str(executable)),
+            ):
+                self.assertEqual(find_vmrun(), executable)
+                self.assertEqual(find_vmrun(executable), executable)
+
+    @unittest.skipIf(os.name == "nt", "POSIX executable permission")
+    def test_nonexecutable_vmrun_rejected(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            executable = Path(temporary) / "vmrun"
+            executable.touch(mode=0o600)
+            with self.assertRaisesRegex(InvalidRequest, "not executable"):
+                find_vmrun(executable)
+
     def test_paths_relative_to_config_and_flags_relative_to_cwd(self):
         with tempfile.TemporaryDirectory() as temporary:
             config_path = Path(temporary) / "config.toml"

@@ -1,4 +1,4 @@
-"""Run a small, opt-in round trip against an already running Windows guest."""
+"""Run a small, opt-in round trip against an already running Windows or POSIX guest."""
 
 import argparse
 import hashlib
@@ -26,9 +26,16 @@ def main():
         bridge.guest.upload(f"{run_name}/input.txt", f"{run_name}/input.txt")
         bridge.guest.download(f"{run_name}/input.txt", f"{run_name}/output.txt")
         assert (host_folder / "output.txt").read_bytes() == payload, "Transfer content mismatch"
-        result = bridge.guest.powershell("[pscustomobject]@{message='bridge smoke'; value=6*7}")
-        assert result["guest"]["ok"], "PowerShell reported an error"
-        assert result["guest"]["data"][0]["value"] == 42, "PowerShell output mismatch"
+        if bridge.config.windows_guest:
+            result = bridge.guest.powershell("[pscustomobject]@{message='bridge smoke'; value=6*7}")
+            assert result["guest"]["ok"], "PowerShell reported an error"
+            assert result["guest"]["data"][0]["value"] == 42, "PowerShell output mismatch"
+        else:
+            result = bridge.guest.shell("printf '%s\\n' \"$((6 * 7))\"")
+            assert result["guest"]["ok"], "Guest shell reported an error"
+            assert result["guest"]["stdout"] == "42\n", "Shell output mismatch"
+            failure = bridge.guest.shell("printf 'expected failure\\n' >&2; exit 7")
+            assert failure["guest"]["exit_code"] == 7 and not failure["guest"]["ok"]
         assert bridge.guest.result(result["request_id"])["guest"] == result["guest"]
         if args.console:
             bridge.console.screenshot(f"{run_name}/screen.png")
@@ -38,7 +45,8 @@ def main():
                     "ok": True,
                     "run": run_name,
                     "round_trip_sha256": hashlib.sha256(payload).hexdigest(),
-                    "powershell": "passed",
+                    "guest_os": bridge.config.guest_os,
+                    "script": "passed",
                     "result_collection": "passed",
                     "console_capture": "passed" if args.console else "not requested",
                 }
