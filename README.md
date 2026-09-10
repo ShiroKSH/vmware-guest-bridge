@@ -1,5 +1,7 @@
 # VMware Guest Bridge
 
+[![CI](https://github.com/ShiroKSH/vmware-guest-bridge/actions/workflows/ci.yml/badge.svg)](https://github.com/ShiroKSH/vmware-guest-bridge/actions/workflows/ci.yml)
+
 Run PowerShell, move files, and control a Windows VM from a terminal. Guest operations use VMware Tools; screenshots, clicks, and keystrokes use VMware's local RFB console. Your host mouse and keyboard stay available while the bridge works inside the guest.
 
 [Русский](README.ru.md) · [Commands](docs/cli.md) · [JSON protocol](docs/protocol.md) · [Console setup](docs/console.md)
@@ -25,13 +27,17 @@ The bridge does not power on VMs or change their network, sharing, firewall, or 
 
 ## Install and run
 
-Download or clone this repository, then run these commands from its directory in PowerShell:
+Clone the repository and install it in a virtual environment from PowerShell:
 
 ```powershell
+git clone https://github.com/ShiroKSH/vmware-guest-bridge.git
+cd vmware-guest-bridge
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install .
 .\.venv\Scripts\vmb.exe init
 ```
+
+You can also use GitHub's **Code → Download ZIP** button and run the last three commands from the extracted directory.
 
 Edit `bridge.toml`: set `vmx` to your VM's configuration file and `username` to its Windows account. Paths in the config are relative to the config file. Keep passwords out of it.
 

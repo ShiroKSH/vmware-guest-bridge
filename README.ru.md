@@ -10,13 +10,17 @@
 
 Нужны Windows, VMware Workstation с `vmrun.exe`, Python 3.11+ и уже запущенная Windows-виртуалка.
 
-Скачай или клонируй репозиторий. В PowerShell из его папки:
+В PowerShell:
 
 ```powershell
+git clone https://github.com/ShiroKSH/vmware-guest-bridge.git
+cd vmware-guest-bridge
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install .
 .\.venv\Scripts\vmb.exe init
 ```
+
+Без Git: скачай **Code → Download ZIP**, распакуй архив и выполни последние три команды из его папки.
 
 В созданном `bridge.toml` укажи путь `vmx` и логин `username` внутри виртуалки. Пароль в конфиг не записывается: обычные команды запрашивают его скрытым вводом.
 

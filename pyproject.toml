@@ -21,6 +21,11 @@ classifiers = [
 ]
 dependencies = []
 
+[project.urls]
+Repository = "https://github.com/ShiroKSH/vmware-guest-bridge"
+Documentation = "https://github.com/ShiroKSH/vmware-guest-bridge/tree/main/docs"
+Issues = "https://github.com/ShiroKSH/vmware-guest-bridge/issues"
+
 [project.scripts]
 vmb = "vmware_guest_bridge.cli:main"
 
