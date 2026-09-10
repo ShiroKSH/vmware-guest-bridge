@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=77.0.3"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vmware-guest-bridge"
+version = "0.1.0.dev0"
+description = "Run Windows guest commands, transfer files, and control a local VMware console."
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+authors = [{name = "ShiroKSH", email = "kushidashiro@gmail.com"}]
+keywords = ["vmware", "vmrun", "automation", "vnc", "windows"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "Operating System :: Microsoft :: Windows",
+  "Programming Language :: Python :: 3",
+  "Topic :: System :: Systems Administration",
+]
+dependencies = []
+
+[project.scripts]
+vmb = "vmware_guest_bridge.cli:main"
+
+[project.optional-dependencies]
+dev = ["build>=1.2", "ruff>=0.15"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]

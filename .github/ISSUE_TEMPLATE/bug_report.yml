@@ -1,0 +1,26 @@
+name: Bug report
+description: A command, transfer, or console action behaves incorrectly.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Replace personal paths and account names. Do not include passwords, private screenshots, VM images, or request files containing secrets.
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction
+      description: Exact command or minimal JSON request, expected result, and actual result.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Versions
+      description: Host Windows, guest Windows, VMware Workstation, VMware Tools, Python, and bridge version or commit.
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Relevant diagnostics
+      description: A small, redacted error message. For a timeout, say whether collecting the same request later succeeded.

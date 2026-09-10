@@ -1,0 +1,16 @@
+name: Feature request
+description: Describe a guest automation workflow the bridge could support.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: workflow
+    attributes:
+      label: Workflow
+      description: What are you trying to do, and which current limitation gets in the way?
+    validations:
+      required: true
+  - type: textarea
+    id: interface
+    attributes:
+      label: Proposed behavior
+      description: An example command or request, expected output, and any relevant VMware version.
